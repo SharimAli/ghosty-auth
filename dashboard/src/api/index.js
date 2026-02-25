@@ -3,7 +3,7 @@
  * Centralised fetch wrappers for all server endpoints.
  */
 
-const BASE = '/api/v1';
+const BASE = (import.meta.env.VITE_API_URL || '') + '/api/v1';
 
 export const token = {
   get:   ()  => localStorage.getItem('ghosty_token'),
