@@ -369,7 +369,33 @@ function _validatePayload(payload) {
 
 // ─── Exports ──────────────────────────────────────────────────────────────────
 
+// ─────────────────────────────────────────────────────────────────────────────
+//  signLicenseToken
+//  Issues a JWT for a license key session (not a user session).
+// ─────────────────────────────────────────────────────────────────────────────
+
+function signLicenseToken(payload) {
+  const { license_id, app_id, hwid, username } = payload;
+  if (!license_id || !app_id || !hwid) {
+    throw new TypeError('[tokenService] signLicenseToken requires license_id, app_id, hwid.');
+  }
+
+  const ttlSecs = _expiresInToSeconds(process.env.JWT_EXPIRES_IN || DEFAULT_EXPIRES);
+
+  const jwtPayload = { license_id, app_id, hwid, username: username || '' };
+
+  const token = jwt.sign(jwtPayload, getPrivateKey(), {
+    algorithm: ALGORITHM,
+    issuer:    ISSUER,
+    expiresIn: ttlSecs,
+  });
+
+  const expiresAt = Date.now() + ttlSecs * 1000;
+  return { token, expiresAt };
+}
+
 module.exports = {
+  signLicenseToken,
   signToken,
   verifyToken,
   decodeTokenUnsafe,

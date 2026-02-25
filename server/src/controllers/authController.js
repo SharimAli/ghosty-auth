@@ -11,7 +11,7 @@ const crypto      = require('crypto');
 const License     = require('../models/License');
 const Log         = require('../models/Log');
 const Application = require('../models/Application');
-const { signToken, verifyToken } = require('../services/tokenService');
+const { signLicenseToken, verifyToken } = require('../services/tokenService');
 const { signResponse }           = require('../services/cryptoService');
 const { validateHWID }           = require('../services/hwidService');
 const { ok, fail }               = require('../utils/response');
@@ -238,7 +238,7 @@ exports.init = async (req, res) => {
       username:   license.username || '',
     };
 
-    const { token, expiresAt } = await signToken(tokenPayload);
+    const { token, expiresAt } = signLicenseToken(tokenPayload);
 
     // ── 12. Log success ───────────────────────────────────────────────────
     await Log.create({
