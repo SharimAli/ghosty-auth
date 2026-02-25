@@ -222,8 +222,11 @@ class GhostyAuth:
     # ─────────────────────────────────────────────────────────────────────────
 
     def _generate_hwid(self) -> str:
+        """
+        SHA-256(MachineGuid|VolumeSerial|MAC)
+        Identical across Python, C++, and C# SDKs.
+        """
         system = platform.system()
-
         if system == "Windows":
             parts = self._hwid_windows()
         elif system == "Linux":
@@ -231,43 +234,41 @@ class GhostyAuth:
         elif system == "Darwin":
             parts = self._hwid_macos()
         else:
-            # Fallback: use machine-id or uuid
-            parts = [str(uuid.getnode())]
+            parts = [f"{uuid.getnode():012X}"]
 
         fingerprint = "|".join(p for p in parts if p)
-
         if not fingerprint:
             raise RuntimeError("Unable to generate HWID on this system.")
-
         return hashlib.sha256(fingerprint.encode("utf-8")).hexdigest()
 
     def _hwid_windows(self) -> list[str]:
         parts: list[str] = []
 
-        wmi_queries = [
-            ("Win32_Processor",  "ProcessorId"),
-            ("Win32_DiskDrive",  "SerialNumber"),
-            ("Win32_BaseBoard",  "SerialNumber"),
-        ]
-
-        for wmi_class, prop in wmi_queries:
-            try:
-                result = subprocess.check_output(
-                    ["wmic", wmi_class, "get", prop],
-                    stderr=subprocess.DEVNULL,
-                    timeout=5
-                ).decode(errors="ignore")
-                lines = [l.strip() for l in result.splitlines() if l.strip() and prop.lower() not in l.lower()]
-                val = lines[0] if lines else ""
-                if val and val.lower() not in ("none", "to be filled by o.e.m.", ""):
-                    parts.append(val)
-            except Exception:
-                pass
-
-        # MAC address
+        # 1. MachineGuid from registry
         try:
-            mac = hex(uuid.getnode()).replace("0x", "").upper()
-            parts.append(mac)
+            import winreg
+            key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Microsoft\Cryptography")
+            val, _ = winreg.QueryValueEx(key, "MachineGuid")
+            winreg.CloseKey(key)
+            if val:
+                parts.append(val.strip().upper())
+        except Exception:
+            pass
+
+        # 2. C:\ volume serial as 8-char uppercase hex
+        try:
+            import ctypes
+            serial = ctypes.c_ulong(0)
+            ctypes.windll.kernel32.GetVolumeInformationW(
+                "C:\\", None, 0, ctypes.byref(serial), None, None, None, 0
+            )
+            parts.append(f"{serial.value:08X}")
+        except Exception:
+            pass
+
+        # 3. MAC address as 12-char uppercase hex no colons
+        try:
+            parts.append(f"{uuid.getnode():012X}")
         except Exception:
             pass
 

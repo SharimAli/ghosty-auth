@@ -37,6 +37,12 @@
 
 // ── libcurl ──────────────────────────────────────────────────────────────────
 #include <curl/curl.h>
+#ifdef _WIN32
+#  ifndef WIN32_LEAN_AND_MEAN
+#    define WIN32_LEAN_AND_MEAN
+#  endif
+#  include <windows.h>
+#endif
 
 // ── OpenSSL ──────────────────────────────────────────────────────────────────
 #include <openssl/hmac.h>
@@ -159,7 +165,11 @@ public:
             return Fail("Invalid response from server.");
         }
 
-        // ── Verify HMAC signature ──
+        // ── If server returned failure, no signature to verify ──
+        if (!response.value("success", false) || !response.contains("data"))
+            return Fail(response.value("message", "Authentication failed."));
+
+        // ── Verify HMAC signature on successful responses only ──
         if (!VerifyResponseSignature(
                 response.value("signature", ""),
                 response.value("timestamp", (int64_t)0),
@@ -167,9 +177,6 @@ public:
         )) {
             TerminateTampered();
         }
-
-        if (!response.value("success", false) || !response.contains("data"))
-            return Fail(response.value("message", "Authentication failed."));
 
         auto& data    = response["data"];
         session_token_ = data.value("token", "");
@@ -264,64 +271,80 @@ private:
     // ─────────────────────────────────────────────────────────────────────────
 
     static std::string GenerateHWID() {
-        std::string combined;
+        // SHA-256(MachineGuid|VolumeSerial|MAC)
+        // Identical format across C++, Python, and C# SDKs.
+        std::string fingerprint;
 
 #ifdef _WIN32
-        combined += GetCPUIDWindows();
-        combined += GetDiskSerialWindows();
-        combined += GetMACAddressWindows();
+        std::string machineGuid = GetMachineGuid();
+        std::string volumeSerial = GetVolumeSerial();
+        std::string mac = GetMACAddress();
+
+        if (!machineGuid.empty())  fingerprint += machineGuid;
+        if (!volumeSerial.empty()) fingerprint += "|" + volumeSerial;
+        if (!mac.empty())          fingerprint += "|" + mac;
 #else
-        combined += GetMachineIDLinux();
-        combined += GetMACAddressLinux();
+        // Linux/Mac handled below
+        fingerprint = GetMachineIDLinux() + "|" + GetMACAddressLinux();
 #endif
 
-        if (combined.empty())
+        if (fingerprint.empty() || fingerprint == "||")
             throw std::runtime_error("[GhostyAuth] Unable to generate HWID.");
 
-        return SHA256Hex(combined);
+        return SHA256Hex(fingerprint);
     }
 
 #ifdef _WIN32
 
-    static std::string GetCPUIDWindows() {
-        std::array<int, 4> cpui{};
-        __cpuid(cpui.data(), 1);
-        std::ostringstream oss;
-        oss << std::hex << std::setfill('0')
-            << std::setw(8) << cpui[3]
-            << std::setw(8) << cpui[0];
-        return oss.str();
+    // MachineGuid from HKLM\SOFTWARE\Microsoft\Cryptography — stable, unique per install
+    static std::string GetMachineGuid() {
+        HKEY hKey;
+        if (RegOpenKeyExA(HKEY_LOCAL_MACHINE,
+            "SOFTWARE\\Microsoft\\Cryptography", 0, KEY_READ | KEY_WOW64_64KEY, &hKey) != ERROR_SUCCESS)
+            return "";
+
+        char buf[256] = {};
+        DWORD size = sizeof(buf);
+        DWORD type = REG_SZ;
+        RegQueryValueExA(hKey, "MachineGuid", nullptr, &type, (LPBYTE)buf, &size);
+        RegCloseKey(hKey);
+
+        std::string val(buf);
+        for (auto& c : val) c = (char)toupper((unsigned char)c);
+        return val;
     }
 
-    static std::string GetDiskSerialWindows() {
+    // C:\ volume serial as 8-char uppercase hex
+    static std::string GetVolumeSerial() {
         DWORD serial = 0;
         ::GetVolumeInformationA("C:\\", nullptr, 0, &serial, nullptr, nullptr, nullptr, 0);
         std::ostringstream oss;
-        oss << std::hex << std::setfill('0') << std::setw(8) << serial;
+        oss << std::uppercase << std::hex << std::setfill('0') << std::setw(8) << serial;
         return oss.str();
     }
 
-    static std::string GetMACAddressWindows() {
-        ULONG buf_len = sizeof(IP_ADAPTER_INFO);
-        std::vector<BYTE> buf(buf_len);
-        auto* adapter_info = reinterpret_cast<PIP_ADAPTER_INFO>(buf.data());
+    // MAC address as 12-char uppercase hex no colons (matches Python uuid.getnode() format)
+    static std::string GetMACAddress() {
+        ULONG bufLen = sizeof(IP_ADAPTER_INFO);
+        std::vector<BYTE> buf(bufLen);
+        auto* info = reinterpret_cast<PIP_ADAPTER_INFO>(buf.data());
 
-        if (::GetAdaptersInfo(adapter_info, &buf_len) == ERROR_BUFFER_OVERFLOW) {
-            buf.resize(buf_len);
-            adapter_info = reinterpret_cast<PIP_ADAPTER_INFO>(buf.data());
+        if (::GetAdaptersInfo(info, &bufLen) == ERROR_BUFFER_OVERFLOW) {
+            buf.resize(bufLen);
+            info = reinterpret_cast<PIP_ADAPTER_INFO>(buf.data());
         }
 
-        if (::GetAdaptersInfo(adapter_info, &buf_len) == NO_ERROR) {
+        if (::GetAdaptersInfo(info, &bufLen) == NO_ERROR && info->AddressLength == 6) {
             std::ostringstream oss;
-            for (int i = 0; i < (int)adapter_info->AddressLength; i++) {
-                if (i > 0) oss << ":";
-                oss << std::hex << std::setfill('0')
-                    << std::setw(2) << (int)adapter_info->Address[i];
+            for (int i = 0; i < 6; i++) {
+                oss << std::uppercase << std::hex << std::setfill('0')
+                    << std::setw(2) << (int)info->Address[i];
             }
             return oss.str();
         }
         return "";
     }
+
 
 #else
 
@@ -442,10 +465,13 @@ private:
         if (::IsDebuggerPresent())
             TerminateTampered();
 
-        // Check NtGlobalFlag in PEB (common debugger artifact)
-        PPEB peb = reinterpret_cast<PPEB>(__readgsqword(0x60));
-        if (peb && (peb->NtGlobalFlag & 0x70))
-            TerminateTampered();
+        // Check NtGlobalFlag via raw GS register read — no PPEB needed
+        ULONG_PTR pebAddr = __readgsqword(0x60);
+        if (pebAddr) {
+            BYTE ntGlobalFlag = *reinterpret_cast<BYTE*>(pebAddr + 0xBC);
+            if (ntGlobalFlag & 0x70)
+                TerminateTampered();
+        }
 #else
         // Linux: check TracerPid in /proc/self/status
         std::ifstream status("/proc/self/status");
