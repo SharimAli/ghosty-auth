@@ -30,8 +30,13 @@ export default function Dashboard() {
           apps.list(),
           isAdmin ? adminStats.get() : Promise.resolve(null),
         ]);
-        setMyApps(appsRes.data || []);
-        if (statsRes) setStats(statsRes.data);
+        // Handle all possible response shapes from the server
+        const raw = appsRes?.data ?? appsRes?.rows ?? appsRes ?? [];
+        setMyApps(Array.isArray(raw) ? raw : []);
+        if (statsRes) {
+          const s = statsRes?.data ?? statsRes;
+          setStats(s);
+        }
       } catch (err) {
         setError(err.message);
       } finally {
@@ -63,11 +68,11 @@ export default function Dashboard() {
               <span className="tag">SYSTEM OVERVIEW</span>
             </div>
             <div className="stat-grid" style={{ marginBottom: 28 }}>
-              <StatCard label="Total Users"    value={stats.total_users}    sub="registered sellers"   variant="accent" />
-              <StatCard label="Applications"   value={stats.total_apps}     sub="across all sellers"   variant="blue" />
-              <StatCard label="License Keys"   value={stats.total_keys}     sub={`${stats.active_keys} active`} variant="accent" />
-              <StatCard label="Banned Keys"    value={stats.banned_keys}    sub="revoked licenses"     variant="red" />
-              <StatCard label="Auth (24h)"     value={stats.auth_last_24h}  sub="authentication events" variant="yellow" />
+              <StatCard label="Total Users"    value={stats.total_users    ?? '—'} sub="registered sellers"    variant="accent" />
+              <StatCard label="Applications"   value={stats.total_apps     ?? '—'} sub="across all sellers"    variant="blue" />
+              <StatCard label="License Keys"   value={stats.total_keys     ?? '—'} sub={`${stats.active_keys ?? 0} active`} variant="accent" />
+              <StatCard label="Banned Keys"    value={stats.banned_keys    ?? '—'} sub="revoked licenses"      variant="red" />
+              <StatCard label="Auth (24h)"     value={stats.auth_last_24h  ?? '—'} sub="authentication events" variant="yellow" />
             </div>
           </>
         )}
@@ -107,7 +112,7 @@ export default function Dashboard() {
                     <div>
                       <div style={{ fontSize:9, color:'var(--text-dim)', textTransform:'uppercase', letterSpacing:'0.1em', marginBottom:2 }}>App ID</div>
                       <div style={{ fontFamily:'var(--font-mono)', fontSize:10, color:'var(--text-muted)' }}>
-                        {app.id.slice(0, 8)}…
+                        {app.id?.slice(0, 8)}…
                       </div>
                     </div>
                     <div>
