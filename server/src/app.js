@@ -27,10 +27,10 @@ const helmet   = require('helmet');
 const cors     = require('cors');
 const crypto   = require('crypto');
 
-const env    = require('./src/config/env');
-const logger = require('./src/utils/logger');
-const { fail } = require('./src/utils/response');
-const routes   = require('./src/routes/index');
+const env    = require('./config/env');
+const logger = require('./utils/logger');
+const { fail } = require('./utils/response');
+const routes   = require('./routes/index');
 
 // ─── App ──────────────────────────────────────────────────────────────────────
 
