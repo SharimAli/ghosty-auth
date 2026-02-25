@@ -56,7 +56,7 @@ exports.getStats = async (req, res) => {
       Log.count({
         where: {
           action:     'AUTH_INIT',
-          created_at: { [Op.gte]: new Date(Date.now() - 24 * 60 * 60 * 1000) },
+          createdAt: { [Op.gte]: new Date(Date.now() - 24 * 60 * 60 * 1000) },
         },
       }),
     ]);
@@ -396,16 +396,16 @@ exports.getLogs = async (req, res) => {
     if (ip)         where.ip         = ip;
 
     if (from || to) {
-      where.created_at = {};
-      if (from) where.created_at[Op.gte] = new Date(from);
-      if (to)   where.created_at[Op.lte] = new Date(to);
+      where.createdAt = {};
+      if (from) where.createdAt[Op.gte] = new Date(from);
+      if (to)   where.createdAt[Op.lte] = new Date(to);
     }
 
     const { count, rows } = await Log.findAndCountAll({
       where,
       limit,
       offset,
-      order: [['created_at', 'DESC']],
+      order: [['createdAt', 'DESC']],
     });
 
     return res.status(200).json({
@@ -444,7 +444,7 @@ exports.purgeLogs = async (req, res) => {
   try {
     const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
     const deleted = await Log.destroy({
-      where: { created_at: { [Op.lt]: cutoff } },
+      where: { createdAt: { [Op.lt]: cutoff } },
     });
 
     logger.info(`[ADMIN] purged ${deleted} logs older than ${days}d — by admin=${adminId}`);

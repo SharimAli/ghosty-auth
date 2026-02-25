@@ -39,16 +39,15 @@ function EditModal({ user, onClose, onDone }) {
   const [form,    setForm]    = useState({ role: user.role, new_password: '' });
   const [loading, setLoading] = useState(false);
   const [error,   setError]   = useState('');
-
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
   async function handle() {
     setError(''); setLoading(true);
     try {
       const payload = {};
-      if (form.role !== user.role)     payload.role = form.role;
-      if (form.new_password.trim())    payload.new_password = form.new_password;
-      if (Object.keys(payload).length === 0) { setError('No changes made.'); setLoading(false); return; }
+      if (form.role !== user.role)  payload.role = form.role;
+      if (form.new_password.trim()) payload.new_password = form.new_password;
+      if (!Object.keys(payload).length) { setError('No changes made.'); setLoading(false); return; }
       await adminUsers.update(user.id, payload);
       onDone(); onClose();
     } catch (err) { setError(err.message); setLoading(false); }
@@ -72,36 +71,39 @@ function EditModal({ user, onClose, onDone }) {
         <label className="form-label">Force New Password <span className="text-muted">optional</span></label>
         <input className="form-input" type="text" placeholder="Leave blank to keep current"
           value={form.new_password} onChange={e => set('new_password', e.target.value)} />
-        <span className="form-hint">Min 8 characters. User will need to use this to log in.</span>
       </div>
     </Modal>
   );
 }
 
 export default function Users() {
-  const [data,       setData]       = useState({ data: [], meta: { pagination: { total:0, total_pages:1 } } });
-  const [page,       setPage]       = useState(1);
-  const [search,     setSearch]     = useState('');
-  const [roleFilter, setRoleFilter] = useState('');
+  const [rows,         setRows]         = useState([]);
+  const [pagination,   setPagination]   = useState({ total:0, total_pages:1 });
+  const [page,         setPage]         = useState(1);
+  const [search,       setSearch]       = useState('');
+  const [roleFilter,   setRoleFilter]   = useState('');
   const [bannedFilter, setBannedFilter] = useState('');
-  const [loading,    setLoading]    = useState(true);
-  const [error,      setError]      = useState('');
+  const [loading,      setLoading]      = useState(true);
+  const [error,        setError]        = useState('');
 
-  const [banTarget,  setBanTarget]  = useState(null);
-  const [editTarget, setEditTarget] = useState(null);
-  const [confirmDel, setConfirmDel] = useState(null);
+  const [banTarget,    setBanTarget]    = useState(null);
+  const [editTarget,   setEditTarget]   = useState(null);
+  const [confirmDel,   setConfirmDel]   = useState(null);
   const [confirmUnban, setConfirmUnban] = useState(null);
-  const [actLoading, setActLoading] = useState(false);
+  const [actLoading,   setActLoading]   = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true); setError('');
     try {
       const params = { page, limit: LIMIT };
-      if (search)       params.search   = search;
-      if (roleFilter)   params.role     = roleFilter;
+      if (search)       params.search    = search;
+      if (roleFilter)   params.role      = roleFilter;
       if (bannedFilter) params.is_banned = bannedFilter;
       const res = await adminUsers.list(params);
-      setData(res);
+      // Server returns: { success, data: { users: [...], pagination: {...} } }
+      const d = res?.data ?? {};
+      setRows(Array.isArray(d.users) ? d.users : []);
+      setPagination(d.pagination ?? { total:0, total_pages:1 });
     } catch (err) { setError(err.message); }
     finally { setLoading(false); }
   }, [page, search, roleFilter, bannedFilter]);
@@ -122,26 +124,21 @@ export default function Users() {
     finally { setActLoading(false); setConfirmDel(null); }
   }
 
-  const rows = data.data || [];
-  const pag  = data.meta?.pagination || { total:0, total_pages:1 };
-
   return (
     <>
-      <PageHeader title="Users" subtitle={`${pag.total} registered accounts`} />
+      <PageHeader title="Users" subtitle={`${pagination.total} registered accounts`} />
       <div className="page-body animate-fade">
         {error && <Alert type="error" onDismiss={() => setError('')}>{error}</Alert>}
 
         <div className="toolbar">
           <input className="search-input" placeholder="Search username or email…" value={search}
             onChange={e => { setSearch(e.target.value); setPage(1); }} />
-          <select className="form-select" value={roleFilter} onChange={e => { setRoleFilter(e.target.value); setPage(1); }}
-            style={{ width:120 }}>
+          <select className="form-select" value={roleFilter} onChange={e => { setRoleFilter(e.target.value); setPage(1); }} style={{ width:120 }}>
             <option value="">All roles</option>
             <option value="seller">Seller</option>
             <option value="admin">Admin</option>
           </select>
-          <select className="form-select" value={bannedFilter} onChange={e => { setBannedFilter(e.target.value); setPage(1); }}
-            style={{ width:130 }}>
+          <select className="form-select" value={bannedFilter} onChange={e => { setBannedFilter(e.target.value); setPage(1); }} style={{ width:130 }}>
             <option value="">All status</option>
             <option value="false">Active</option>
             <option value="true">Banned</option>
@@ -155,15 +152,7 @@ export default function Users() {
             <div className="table-wrap">
               <table>
                 <thead>
-                  <tr>
-                    <th>Username</th>
-                    <th>Email</th>
-                    <th>Role</th>
-                    <th>Status</th>
-                    <th>Last Login</th>
-                    <th>Joined</th>
-                    <th>Actions</th>
-                  </tr>
+                  <tr><th>Username</th><th>Email</th><th>Role</th><th>Status</th><th>Last Login</th><th>Joined</th><th>Actions</th></tr>
                 </thead>
                 <tbody>
                   {rows.map(u => (
@@ -192,7 +181,7 @@ export default function Users() {
                 </tbody>
               </table>
             </div>
-            <Pagination page={page} totalPages={pag.total_pages} total={pag.total} limit={LIMIT} onChange={setPage} />
+            <Pagination page={page} totalPages={pagination.total_pages} total={pagination.total} limit={LIMIT} onChange={setPage} />
           </div>
         )}
       </div>
@@ -202,7 +191,7 @@ export default function Users() {
       {confirmUnban && <ConfirmModal title="Unban User" message="Remove the ban from this account?"
         onConfirm={() => handleUnban(confirmUnban)} onCancel={() => setConfirmUnban(null)} loading={actLoading} />}
       {confirmDel   && <ConfirmModal title="Delete User" danger
-        message="Permanently delete this user and all their applications and keys? This cannot be undone."
+        message="Permanently delete this user and all their data? Cannot be undone."
         onConfirm={handleDelete} onCancel={() => setConfirmDel(null)} loading={actLoading} />}
     </>
   );
