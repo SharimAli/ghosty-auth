@@ -54,7 +54,7 @@ const AES_TAG_LEN    = 16;
  */
 function signResponse(success, message, data, secret) {
   const timestamp = Date.now();
-  const dataJson  = JSON.stringify(data ?? null);
+  const dataJson  = JSON.stringify(data ?? null, Object.keys(data ?? {}).sort());
   const sigInput  = `${timestamp}:${dataJson}`;
   const signature = computeHMAC(secret, sigInput);
 
@@ -81,7 +81,7 @@ function signResponse(success, message, data, secret) {
 function verifyResponseSignature(signature, timestamp, data, secret) {
   if (!signature || !timestamp || !secret) return false;
 
-  const dataJson  = JSON.stringify(data ?? null);
+  const dataJson  = JSON.stringify(data ?? null, Object.keys(data ?? {}).sort());
   const sigInput  = `${timestamp}:${dataJson}`;
   const expected  = computeHMAC(secret, sigInput);
 

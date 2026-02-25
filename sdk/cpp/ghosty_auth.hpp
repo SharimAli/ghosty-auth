@@ -408,7 +408,14 @@ private:
     ) const {
         if (signature.empty()) return false;
 
-        std::string data_json = data.is_null() ? "{}" : data.dump();
+        // Sort keys to match server JSON.stringify with sorted replacer
+        auto sorted_data = data.is_null() ? json::object() : data;
+        // Re-serialize with sorted keys via ordered iteration on a sorted copy
+        std::string data_json = data.is_null() ? "{}" : [&]() {
+            std::map<std::string, json> sorted_map(sorted_data.begin(), sorted_data.end());
+            json sorted_json(sorted_map);
+            return sorted_json.dump();
+        }();
         std::string message   = std::to_string(timestamp) + ":" + data_json;
         std::string expected  = HMACHex(app_secret_, message);
 
