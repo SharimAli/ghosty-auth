@@ -3,6 +3,7 @@
  * Centralised fetch wrappers for all server endpoints.
  */
 
+// API base — set VITE_API_URL in Cloudflare Pages env vars
 const BASE = (import.meta.env.VITE_API_URL || '') + '/api/v1';
 
 export const token = {
