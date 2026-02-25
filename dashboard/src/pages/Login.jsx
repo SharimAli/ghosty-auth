@@ -27,7 +27,7 @@ export default function Login() {
     try {
       const payload = { email: form.email, password: form.password, username: form.username };
       if (form.registration_key) payload.registration_key = form.registration_key;
-      const r = await fetch('/api/v1/users/register', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) });
+      const r = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/v1/users/register`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) });
       if (!r.ok) { const d = await r.json(); throw new Error(d.message || 'Registration failed.'); }
       const res = await auth.login(form.email, form.password);
       token.set(res.data.token); session.set(res.data.user);
