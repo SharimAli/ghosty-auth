@@ -26,6 +26,7 @@
 const { Sequelize } = require('sequelize');
 const env    = require('./env');
 const logger = require('../utils/logger');
+const DB_URL = process.env.DATABASE_URL;
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -34,60 +35,56 @@ const CONNECT_RETRY_DELAY  = 3000;   // ms between retries
 
 // ─── Sequelize Instance ───────────────────────────────────────────────────────
 
-const sequelize = new Sequelize(
-  env.DB.NAME,
-  env.DB.USER,
-  env.DB.PASSWORD,
-  {
-    host:    env.DB.HOST,
-    port:    env.DB.PORT,
-    dialect: 'postgres',
-
-    // ── Connection pool ───────────────────────────────────────────────────────
-    pool: {
-      min:     env.DB.POOL.MIN,
-      max:     env.DB.POOL.MAX,
-      acquire: env.DB.POOL.ACQUIRE_MS,
-      idle:    env.DB.POOL.IDLE_MS,
-    },
-
-    // ── SSL (required in production) ──────────────────────────────────────────
-    ...(env.DB.SSL && {
+const sequelize = DB_URL
+  ? new Sequelize(DB_URL, {
+      dialect: 'postgres',
+      logging: env.DB.LOG_QUERIES ? (sql, timing) => logger.query(sql, timing) : false,
+      benchmark: env.DB.LOG_QUERIES,
       dialectOptions: {
-        ssl: {
-          require:            true,
-          rejectUnauthorized: true,   // Verify server certificate
-        },
+        ssl: { require: true, rejectUnauthorized: false },
       },
-    }),
-
-    // ── Logging ───────────────────────────────────────────────────────────────
-    // Pass query SQL to logger.query() in dev; silence in production
-    logging: env.DB.LOG_QUERIES
-      ? (sql, timing) => logger.query(sql, timing)
-      : false,
-
-    benchmark: env.DB.LOG_QUERIES,   // Adds query timing to log calls
-
-    // ── Global model options ──────────────────────────────────────────────────
-    define: {
-      underscored:  false,
-      timestamps:   true,
-      freezeTableName: true,   // Don't auto-pluralise table names
-    },
-
-    // ── Timezone ──────────────────────────────────────────────────────────────
-    timezone: '+00:00',   // Always store/retrieve in UTC
-
-    // ── Type casting ─────────────────────────────────────────────────────────
-    // Ensure BigInt columns come back as strings, not JS numbers
-    dialectOptions: {
-      ...(env.DB.SSL && {
-        ssl: { require: true, rejectUnauthorized: true },
-      }),
-    },
-  }
-);
+      pool: {
+        min:     env.DB.POOL.MIN,
+        max:     env.DB.POOL.MAX,
+        acquire: env.DB.POOL.ACQUIRE_MS,
+        idle:    env.DB.POOL.IDLE_MS,
+      },
+      define: {
+        underscored:     false,
+        timestamps:      true,
+        freezeTableName: true,
+      },
+      timezone: '+00:00',
+    })
+  : new Sequelize(
+      env.DB.NAME,
+      env.DB.USER,
+      env.DB.PASSWORD,
+      {
+        host:    env.DB.HOST,
+        port:    env.DB.PORT,
+        dialect: 'postgres',
+        pool: {
+          min:     env.DB.POOL.MIN,
+          max:     env.DB.POOL.MAX,
+          acquire: env.DB.POOL.ACQUIRE_MS,
+          idle:    env.DB.POOL.IDLE_MS,
+        },
+        ...(env.DB.SSL && {
+          dialectOptions: {
+            ssl: { require: true, rejectUnauthorized: true },
+          },
+        }),
+        logging: env.DB.LOG_QUERIES ? (sql, timing) => logger.query(sql, timing) : false,
+        benchmark: env.DB.LOG_QUERIES,
+        define: {
+          underscored:     false,
+          timestamps:      true,
+          freezeTableName: true,
+        },
+        timezone: '+00:00',
+      }
+    );
 
 // ─── connect (with retry) ─────────────────────────────────────────────────────
 
